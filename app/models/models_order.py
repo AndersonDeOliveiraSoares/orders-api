@@ -2,12 +2,14 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +18,13 @@ from app.models.models_base import Base
 
 class Order(Base):
     __tablename__ = "orders"
+
+    __table_args__ = (
+        CheckConstraint(
+            "total_amount >= 0",
+            name="ck_orders_total_amount_positive"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -27,7 +36,8 @@ class Order(Base):
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
-        default="PENDING"
+        default="PENDING",
+        server_default=text("'PENDING'")
     )
 
     total_amount: Mapped[Decimal] = mapped_column(
@@ -53,6 +63,17 @@ class Order(Base):
 
 class OrderItem(Base):
     __tablename__ = "order_items"
+
+    __table_args__ = (
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_order_items_quantity_positive"
+        ),
+        CheckConstraint(
+            "unit_price >= 0",
+            name="ck_order_items_unit_price_positive"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
