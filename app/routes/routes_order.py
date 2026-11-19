@@ -1,11 +1,43 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from app.schemas.schemas_order import OrderCreate
+from app.database.database_connection import get_db
+from app.schemas.schemas_order import OrderCreate, OrderResponse
+from app.services.service_order import OrderService
 
-router = APIRouter(prefix="/orders", tags=["orders"])
+router = APIRouter(tags=["Orders"])
 
+@router.post(
+    "/orders",
+    response_model=OrderResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def create_order(
+    order_data: OrderCreate,
+    db: Session = Depends(get_db)
+):
+    service = OrderService(db)
+    return service.create_order(order_data)
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
-def create_order(order: OrderCreate):
-    # Provisório: ainda não existe Service. Só devolve o que foi validado.
-    return order.model_dump()
+@router.get(
+    "/orders/{order_id}",
+    response_model=OrderResponse,
+    status_code=status.HTTP_200_OK
+)
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    service = OrderService(db)
+    return service.get_order_by_id(order_id)
+
+@router.get(
+    "/orders",
+    response_model=list[OrderResponse],
+    status_code=status.HTTP_200_OK
+)
+def get_all_orders(
+    db: Session = Depends(get_db)
+):
+    service = OrderService(db)
+    return service.get_all_orders()

@@ -9,14 +9,16 @@ class OrderRepository:
 
     def __init__(self, db: Session):
         self.db = db
-
     def get_by_id(self, order_id: int) -> Optional[Order]:
-        """
-        Busca um pedido pelo ID.
-
-        Retorna Order se encontrado ou None caso contrário.
-        """
-        return self.db.get(Order, order_id)
+        statement = select(Order).where(Order.id == order_id)
+        return self.db.scalars(statement).first()
+    # def get_by_id(self, order_id: int) -> Optional[Order]:
+    #     """
+    #     Busca um pedido pelo ID.
+    #
+    #     Retorna Order se encontrado ou None caso contrário.
+    #     """
+    #     return self.db.get(Order, order_id)
 
     def get_all(self) -> list[Order]:
         """
