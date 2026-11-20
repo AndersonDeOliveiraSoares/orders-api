@@ -14,16 +14,6 @@ from app.models.models_customer import Customer
 from app.models.models_product import Product
 
 
-@pytest.fixture
-def status_client(db_session):
-    def override_get_db():
-        return db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
 
 def create_order_for_status_test(client, db_session, stock=10, quantity=3):
     customer = Customer(

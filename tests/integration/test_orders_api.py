@@ -8,24 +8,7 @@ from app.main import app
 from app.database.database_connection import get_db
 from app.models.models_customer import Customer
 from app.models.models_product import Product
-from app.models.models_order import Order
 
-
-@pytest.fixture
-def client(db_session):
-    """
-    Cliente HTTP de teste usando a sessão isolada do conftest.
-    """
-
-    def override_get_db():
-        return db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    with TestClient(app) as test_client:
-        yield test_client
-
-    app.dependency_overrides.clear()
 
 
 def create_customer(db_session):

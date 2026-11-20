@@ -1,72 +1,55 @@
 # Orders API
 
-API REST para gerenciamento de pedidos, desenvolvida com Python e FastAPI, utilizando PostgreSQL, SQLAlchemy e arquitetura em camadas.
+API REST para gerenciamento de clientes, produtos e pedidos, desenvolvida com **Python, FastAPI e PostgreSQL**.
 
-O projeto demonstra boas práticas de desenvolvimento Backend, separação de responsabilidades, validação de dados, regras de negócio, integridade transacional, controle de estoque e testes automatizados.
+O projeto demonstra práticas de desenvolvimento Backend, arquitetura em camadas, aplicação de regras de negócio, integridade transacional, controle de estoque, tratamento de exceções e testes automatizados.
+
+O objetivo é apresentar uma aplicação organizada, testável e preparada para evoluções, simulando cenários comuns de sistemas comerciais.
+
+---
 
 ## Sobre o projeto
 
-A Orders API é um projeto de portfólio desenvolvido para demonstrar conhecimentos em engenharia de software e desenvolvimento Backend com Python.
+A Orders API permite gerenciar clientes, produtos e pedidos por meio de endpoints REST.
 
-A aplicação permite criar e consultar pedidos, validando clientes, produtos e disponibilidade de estoque. Os valores dos pedidos são calculados no Backend, e as operações de criação e atualização de estoque são realizadas dentro de uma transação.
+A aplicação implementa regras de negócio para impedir operações inconsistentes, controlar a disponibilidade de estoque e preservar os dados envolvidos nas transações.
 
-O projeto está sendo desenvolvido de forma incremental, priorizando organização, manutenibilidade, integridade dos dados e qualidade do código.
+Entre os principais recursos estão:
+
+- CRUD de clientes e produtos.
+- Criação, consulta e listagem de pedidos.
+- Cálculo automático dos valores dos pedidos.
+- Registro do preço do produto no momento da compra.
+- Controle de estoque durante a criação dos pedidos.
+- Atualização de status dos pedidos.
+- Cancelamento com devolução de estoque.
+- Tratamento centralizado de exceções.
+- Testes automatizados com banco de dados isolado.
+
+---
 
 ## Tecnologias utilizadas
 
-- Python 3.11
-- FastAPI
-- Pydantic 2
-- SQLAlchemy 2
-- PostgreSQL 16
-- Alembic
-- Pytest
-- HTTPX
-- Docker
+| Tecnologia | Aplicação |
+|---|---|
+| Python 3.11 | Linguagem de programação |
+| FastAPI | Desenvolvimento da API REST |
+| Pydantic 2 | Validação e estruturação dos dados |
+| SQLAlchemy 2 | ORM e persistência |
+| PostgreSQL 16 | Banco de dados relacional |
+| Psycopg 3 | Driver PostgreSQL |
+| Alembic | Controle de migrações |
+| Pytest | Testes automatizados |
+| Pytest-cov | Análise de cobertura |
+| HTTPX2 | Cliente utilizado pelo TestClient |
+| Docker | Execução do PostgreSQL |
+| Git | Controle de versão |
 
-## Arquitetura do projeto
+---
 
-A aplicação utiliza arquitetura em camadas, separando as responsabilidades de cada componente.
+## Arquitetura
 
-```text
-orders-api/
-│
-├── app/
-│   ├── database/
-│   ├── exceptions/
-│   ├── models/
-│   ├── repositories/
-│   ├── routes/
-│   ├── schemas/
-│   ├── services/
-│   └── main.py
-│
-├── migrations/
-│   └── versions/
-│
-├── tests/
-│   ├── services/
-│   ├── integration/
-│   └── conftest.py
-│
-├── .env
-├── .gitignore
-├── alembic.ini
-├── requirements.txt
-└── README.md
-```
-
-### Responsabilidades das camadas
-
-- **Routes:** recebem as requisições HTTP e disponibilizam os endpoints.
-- **Schemas:** validam os dados de entrada e estruturam as respostas.
-- **Services:** implementam as regras de negócio, cálculos e coordenação das transações.
-- **Repositories:** concentram o acesso e a persistência dos dados.
-- **Models:** representam as entidades e restrições do banco de dados.
-- **Database:** gerencia as conexões e sessões com o PostgreSQL.
-- **Exceptions:** centralizam as exceções da aplicação e seus respectivos códigos HTTP.
-- **Migrations:** controlam a evolução da estrutura do banco com Alembic.
-- **Tests:** validam regras de negócio e comportamento dos endpoints.
+O projeto utiliza arquitetura em camadas, separando responsabilidades e facilitando a manutenção e evolução da aplicação.
 
 ### Fluxo de processamento
 
@@ -74,79 +57,159 @@ orders-api/
 Requisição HTTP
       |
       v
-    Routes
+   Routes
       |
       v
-    Schemas
+   Schemas
       |
       v
-    Services
+   Services
       |
       v
-  Repositories
+ Repositories
+      |
+      v
+   Models
       |
       v
   PostgreSQL
 ```
 
-As regras de negócio ficam concentradas na camada de serviços, evitando que as rotas assumam responsabilidades de persistência ou processamento.
+### Responsabilidades
+
+- **Routes:** recebem as requisições HTTP e disponibilizam os endpoints.
+- **Schemas:** validam os dados de entrada e estruturam as respostas.
+- **Services:** implementam as regras de negócio e coordenam as operações.
+- **Repositories:** concentram as operações de acesso e persistência.
+- **Models:** representam as entidades e relacionamentos do banco.
+- **Database:** gerencia as conexões e sessões com o PostgreSQL.
+- **Exceptions:** centralizam as exceções e seus respectivos códigos HTTP.
+- **Migrations:** controlam a evolução da estrutura do banco com Alembic.
+- **Tests:** verificam regras de negócio, integração e comportamento da API.
+
+---
 
 ## Funcionalidades implementadas
 
-### Pedidos
+### 1. Customers API
+
+Gerenciamento de clientes.
+
+- Cadastro de clientes.
+- Consulta de cliente por identificador.
+- Listagem de clientes.
+- Atualização de dados.
+- Exclusão de clientes.
+- Validação de e-mail duplicado.
+- Proteção contra exclusão de clientes associados a pedidos.
+
+### 2. Products API
+
+Gerenciamento de produtos.
+
+- Cadastro de produtos.
+- Consulta de produto por identificador.
+- Listagem de produtos.
+- Atualização de dados.
+- Exclusão de produtos.
+- Validação de preço e estoque.
+- Proteção contra exclusão de produtos associados a pedidos.
+
+### 3. Orders API
+
+Gerenciamento do ciclo de vida dos pedidos.
 
 - Criação de pedidos.
 - Consulta de pedido por identificador.
 - Listagem de pedidos.
 - Associação de pedidos a clientes.
 - Associação de produtos aos pedidos.
+- Validação de clientes e produtos.
+- Validação da disponibilidade de estoque.
 - Cálculo automático do valor total.
 - Registro do preço unitário no momento da compra.
+- Atualização de status.
+- Cancelamento de pedidos com devolução de estoque.
 
-### Validações e regras de negócio
+### 4. Regras de negócio e integridade transacional
 
-- Validação da existência do cliente.
-- Validação da existência dos produtos.
-- Validação de estoque disponível.
-- Rejeição de quantidades inválidas.
+As operações de criação de pedidos e atualização de status respeitam regras de integridade para evitar inconsistências nos dados.
+
+Principais mecanismos:
+
+- Cálculos financeiros utilizando `Decimal`.
+- Validação de quantidades e disponibilidade de estoque.
 - Rejeição de pedidos sem itens.
 - Rejeição de produtos duplicados no mesmo pedido.
-- Cálculo de valores utilizando `Decimal`.
-- Atualização automática do estoque.
-
-### Integridade transacional
-
+- Snapshot do preço unitário no momento da compra.
 - Criação do pedido e dos itens na mesma transação.
-- Atualização do estoque na mesma transação.
+- Atualização de estoque dentro da transação.
 - Rollback em caso de falha.
-- Bloqueio de registros de produtos com `SELECT FOR UPDATE`, protegendo o estoque durante o processamento concorrente de pedidos.
+- Bloqueio de registros com `SELECT FOR UPDATE`, protegendo o estoque durante o processamento concorrente.
 
-### Tratamento de exceções
+### 5. Transições de status dos pedidos
 
-A aplicação possui tratamento centralizado de exceções, com respostas HTTP padronizadas.
+O ciclo de vida dos pedidos possui transições controladas:
 
-| Situação | Código HTTP |
-|---|---:|
-| Pedido criado | 201 |
-| Consulta realizada | 200 |
-| Cliente não encontrado | 404 |
-| Produto não encontrado | 404 |
-| Pedido não encontrado | 404 |
-| Estoque insuficiente | 409 |
-| Dados de entrada inválidos | 422 |
+| Status atual | Próximos status permitidos |
+|---|---|
+| PENDING | CONFIRMED ou CANCELLED |
+| CONFIRMED | COMPLETED ou CANCELLED |
+| COMPLETED | Nenhum — estado final |
+| CANCELLED | Nenhum — estado final |
+
+No cancelamento, o estoque dos produtos é devolvido dentro da operação transacional.
+
+A regra impede que um pedido já cancelado devolva o estoque novamente.
+
+---
 
 ## Endpoints disponíveis
+
+A API disponibiliza os seguintes endpoints:
+
+### Health Check
 
 | Método | Endpoint | Descrição |
 |---|---|---|
 | GET | `/health` | Verificação de saúde da aplicação |
-| POST | `/orders` | Criação de pedido |
-| GET | `/orders` | Listagem de pedidos |
-| GET | `/orders/{order_id}` | Consulta de pedido |
 
-### Exemplo de criação de pedido
+### Customers
 
-**POST /orders**
+| Método | Endpoint | Descrição |
+|---|---|---|
+| POST | `/customers` | Cadastrar cliente |
+| GET | `/customers` | Listar clientes |
+| GET | `/customers/{customer_id}` | Consultar cliente |
+| PUT | `/customers/{customer_id}` | Atualizar cliente |
+| DELETE | `/customers/{customer_id}` | Excluir cliente |
+
+### Products
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| POST | `/products` | Cadastrar produto |
+| GET | `/products` | Listar produtos |
+| GET | `/products/{product_id}` | Consultar produto |
+| PUT | `/products/{product_id}` | Atualizar produto |
+| DELETE | `/products/{product_id}` | Excluir produto |
+
+### Orders
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| POST | `/orders` | Criar pedido |
+| GET | `/orders` | Listar pedidos |
+| GET | `/orders/{order_id}` | Consultar pedido |
+| PATCH | `/orders/{order_id}/status` | Atualizar status do pedido |
+
+---
+
+## Exemplos de utilização
+
+### Criar pedido
+
+**POST `/orders`**
 
 Requisição:
 
@@ -166,35 +229,84 @@ Requisição:
 }
 ```
 
-O preço dos produtos e o valor total não são informados pelo cliente. Esses valores são obtidos e calculados pelo Backend.
+O cliente informa os identificadores e as quantidades. O Backend consulta os preços cadastrados, calcula os valores e controla a atualização do estoque.
 
-Exemplo de resposta:
+**Observação:**: Os identificadores utilizados são ilustrativos. Antes de criar um pedido, cadastre um cliente e os produtos correspondentes.
+
+### Atualizar status
+
+**PATCH `/orders/{order_id}/status`**
+
+Exemplo de requisição:
 
 ```json
 {
-  "id": 1,
-  "customer_id": 1,
-  "status": "PENDING",
-  "total_amount": "7300.00",
-  "created_at": "2026-11-19T10:00:00",
-  "items": [
-    {
-      "product_id": 1,
-      "quantity": 2,
-      "unit_price": "3500.00",
-      "subtotal": "7000.00"
-    },
-    {
-      "product_id": 2,
-      "quantity": 3,
-      "unit_price": "100.00",
-      "subtotal": "300.00"
-    }
-  ]
+  "status": "CONFIRMED"
 }
 ```
 
-*Os identificadores e valores acima são ilustrativos.*
+As transições são validadas pela camada de serviços, respeitando as regras de negócio definidas para o ciclo de vida dos pedidos.
+
+---
+
+## Tratamento de exceções
+
+A aplicação utiliza tratamento centralizado de exceções e respostas HTTP padronizadas.
+
+| Situação | Código HTTP |
+|---|---:|
+| Recurso criado | 201 |
+| Consulta ou atualização realizada | 200 |
+| Exclusão realizada | 204 |
+| Recurso não encontrado | 404 |
+| Conflito com regras de negócio | 409 |
+| Dados de entrada inválidos | 422 |
+
+Exemplos de conflitos:
+
+- E-mail de cliente já cadastrado.
+- Estoque insuficiente.
+- Exclusão de cliente ou produto associado a pedidos.
+- Transição de status não permitida.
+
+---
+
+## Estrutura do projeto
+
+```text
+orders-api/
+│
+├── app/
+│   ├── core/
+│   ├── database/
+│   ├── exceptions/
+│   ├── models/
+│   ├── repositories/
+│   ├── routes/
+│   ├── schemas/
+│   ├── services/
+│   └── main.py
+│
+├── migrations/
+│   └── versions/
+│
+├── tests/
+│   ├── integration/
+│   ├── repositories/
+│   ├── services/
+│   ├── conftest.py
+│   └── test_schemas_order.py
+│
+├── .env
+├── .gitignore
+├── alembic.ini
+├── docker-compose.yml
+├── pytest.ini
+├── requirements.txt
+└── README.md
+```
+
+---
 
 ## Como executar o projeto
 
@@ -202,14 +314,13 @@ Exemplo de resposta:
 
 - Python 3.11 ou superior.
 - Git.
-- Docker.
-- PostgreSQL 16 (pode ser executado em container).
+- Docker Desktop.
+- PostgreSQL 16 (executado pelo Docker Compose).
 
 ### 1. Clonar o repositório
 
 ```bash
 git clone https://github.com/AndersonDeOliveiraSoares/orders-api.git
-
 cd orders-api
 ```
 
@@ -231,26 +342,44 @@ Ativar no Windows PowerShell:
 pip install -r requirements.txt
 ```
 
-### 4. Configurar o banco de dados
+### 4. Configurar as variáveis de ambiente
 
-Configure as variáveis de conexão do PostgreSQL no arquivo `.env`, conforme a configuração utilizada em `app/database/database_connection.py`.
+Configure o arquivo `.env` com as variáveis necessárias para a conexão com o PostgreSQL.
 
-O ambiente de desenvolvimento utiliza PostgreSQL 16 em Docker, com a seguinte configuração:
+O Docker Compose utiliza as variáveis:
 
-- Banco: `orders_db`
-- Usuário: `orders_user`
-- Porta local: `5434`
-- Porta do PostgreSQL no container: `5432`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
 
-Não publique credenciais ou senhas do banco no repositório.
+Consulte `app/database/database_connection.py` para verificar a configuração de conexão utilizada pela aplicação.
 
-### 5. Executar as migrações
+Não publique credenciais ou senhas no repositório.
+
+### 5. Iniciar o PostgreSQL
+
+```bash
+docker compose up -d db
+```
+
+O ambiente de desenvolvimento utiliza:
+
+| Configuração | Valor |
+|---|---|
+| Container | orders-postgres |
+| Imagem | postgres:16 |
+| Banco | orders_db |
+| Usuário | orders_user |
+| Porta local | 5434 |
+| Porta do container | 5432 |
+
+### 6. Executar as migrações
 
 ```bash
 alembic upgrade head
 ```
 
-### 6. Executar a aplicação
+### 7. Executar a aplicação
 
 ```bash
 uvicorn app.main:app --reload
@@ -263,38 +392,80 @@ A aplicação ficará disponível em:
 - ReDoc: http://127.0.0.1:8000/redoc
 - Health Check: http://127.0.0.1:8000/health
 
+---
+
+## Banco de dados de testes
+
+O projeto utiliza um banco de dados exclusivo para testes automatizados, separado do banco de desenvolvimento.
+
+| Ambiente | Banco | Porta |
+|---|---|---:|
+| Desenvolvimento | orders_db | 5434 |
+| Testes | orders_test_db | 5434 |
+
+O banco de testes é utilizado pelas fixtures do Pytest, que criam a estrutura necessária e isolam as operações realizadas durante a execução dos testes.
+
+Para criar o banco de testes no container:
+
+```powershell
+docker exec orders-postgres psql -U orders_user -d postgres -c "CREATE DATABASE orders_test_db;"
+```
+
+Essa criação deve ser realizada uma única vez no ambiente local.
+
+---
+
 ## Testes automatizados
 
-O projeto utiliza Pytest para validar regras de negócio e comportamento da API.
+O projeto utiliza Pytest para validar o comportamento das diferentes camadas da aplicação.
 
 ### Executar todos os testes
 
 ```bash
-python -m pytest -v
+pytest -q
 ```
 
 ### Executar testes de serviços
 
 ```bash
-python -m pytest tests/services/ -v
+pytest tests/services/ -v
 ```
 
 ### Executar testes de integração
 
 ```bash
-python -m pytest tests/integration/ -v
+pytest tests/integration/ -v
 ```
 
-### Cobertura atual
+### Executar testes de repositórios
 
-**33 testes automatizados aprovados.**
+```bash
+pytest tests/repositories/ -v
+```
 
-- 26 testes de serviços.
-- 7 testes de integração HTTP.
+### Executar com relatório de cobertura
 
-Os testes verificam criação de pedidos, cálculos, validações, disponibilidade de estoque, rollback e códigos de resposta HTTP.
+```bash
+pytest --cov=app --cov-report=term-missing
+```
+
+### Resultados atuais
+
+| Indicador | Resultado |
+|---|---:|
+| Testes aprovados | 83 |
+| Cobertura total | 97% |
+| Warnings na última execução | 0 |
+
+A suíte automatizada contempla testes de serviços, repositórios, schemas e integração HTTP.
+
+Os testes verificam regras de negócio, validações, persistência, transações, rollback, controle de estoque e respostas da API.
+
+---
 
 ## Roadmap de desenvolvimento
+
+### Concluído
 
 - [x] Estrutura inicial do projeto.
 - [x] Configuração do FastAPI.
@@ -305,21 +476,33 @@ Os testes verificam criação de pedidos, cálculos, validações, disponibilida
 - [x] Services e regras de negócio.
 - [x] Integração com PostgreSQL.
 - [x] Migrações com Alembic.
-- [x] Criação e consulta de pedidos.
-- [x] Processamento transacional de pedidos.
+- [x] Orders Core.
+- [x] Customers API completa.
+- [x] Products API completa.
+- [x] Controle transacional de pedidos.
 - [x] Atualização e validação de estoque.
+- [x] Controle de concorrência com `SELECT FOR UPDATE`.
+- [x] Transições de status e cancelamento de pedidos.
+- [x] Devolução de estoque no cancelamento.
 - [x] Tratamento centralizado de exceções.
-- [x] Controle de concorrência com bloqueio de registros.
-- [x] Testes automatizados de serviços.
+- [x] Testes de serviços.
+- [x] Testes de repositórios.
 - [x] Testes de integração HTTP.
-- [ ] Banco de dados exclusivo para testes.
+- [x] Banco de dados exclusivo para testes.
+- [x] Isolamento das operações de teste.
+- [x] Configuração de dependências com `requirements.txt`.
+
+### Próximas evoluções
+
 - [ ] Testes de concorrência com transações independentes.
 - [ ] Idempotência na criação de pedidos.
 - [ ] Transactional Outbox.
 - [ ] Integração com RabbitMQ.
 - [ ] Containerização completa da aplicação.
-- [ ] Pipeline de CI/CD.
+- [ ] Pipeline de CI/CD com GitHub Actions.
 - [ ] Monitoramento e observabilidade.
+
+---
 
 ## Autor
 
@@ -328,3 +511,9 @@ Os testes verificam criação de pedidos, cálculos, validações, disponibilida
 Desenvolvedor Backend | Python | FastAPI | SQL | Engenharia de Software
 
 GitHub: [AndersonDeOliveiraSoares](https://github.com/AndersonDeOliveiraSoares)
+
+Repositório: [orders-api](https://github.com/AndersonDeOliveiraSoares/orders-api)
+
+---
+
+*Projeto desenvolvido com foco em boas práticas de Engenharia de Software, arquitetura Backend, integridade de dados e qualidade de código.*
