@@ -18,3 +18,7 @@ class OrderNotFoundException(NotFoundException):
 
 class InsufficientStockException(ConflictException):
     """Estoque insuficiente para atender ao pedido."""
+
+
+class InvalidOrderStatusException(ConflictException):
+    """Transição de status não permitida."""

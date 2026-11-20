@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.database.database_connection import get_db
-from app.schemas.schemas_order import OrderCreate, OrderResponse
+from app.schemas.schemas_order import (
+    OrderCreate,
+    OrderResponse,
+    OrderStatusUpdate,
+)
 from app.services.service_order import OrderService
 
 router = APIRouter(tags=["Orders"])
+
 
 @router.post(
     "/orders",
@@ -19,6 +24,7 @@ def create_order(
     service = OrderService(db)
     return service.create_order(order_data)
 
+
 @router.get(
     "/orders/{order_id}",
     response_model=OrderResponse,
@@ -31,6 +37,7 @@ def get_order(
     service = OrderService(db)
     return service.get_order_by_id(order_id)
 
+
 @router.get(
     "/orders",
     response_model=list[OrderResponse],
@@ -41,3 +48,17 @@ def get_all_orders(
 ):
     service = OrderService(db)
     return service.get_all_orders()
+
+
+@router.patch(
+    "/orders/{order_id}/status",
+    response_model=OrderResponse,
+    status_code=status.HTTP_200_OK
+)
+def update_order_status(
+    order_id: int,
+    status_data: OrderStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    service = OrderService(db)
+    return service.update_order_status(order_id, status_data.status)

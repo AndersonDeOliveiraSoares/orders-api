@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -31,6 +32,10 @@ class OrderCreate(BaseModel):
             seen.add(item.product_id)
 
         return self
+
+
+class OrderStatusUpdate(BaseModel):
+    status: Literal["CONFIRMED", "COMPLETED", "CANCELLED"]
 
 
 # ---------- Saída ----------
