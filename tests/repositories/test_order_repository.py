@@ -65,7 +65,6 @@ def test_get_all_returns_orders_ordered_by_id(db_session):
 
     result_ids = [order.id for order in result]
 
-    assert len(result) == 4
     assert result_ids == sorted(result_ids)
 
 

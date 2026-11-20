@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -9,13 +10,42 @@ from app.schemas.schemas_order import (
 )
 from app.services.service_order import OrderService
 
+
 router = APIRouter(tags=["Orders"])
+
+
+ERROR_RESPONSES = {
+    404: {
+        "description": "Recurso não encontrado",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Cliente não encontrado: 999999"
+                }
+            }
+        },
+    },
+    409: {
+        "description": "Conflito com as regras de negócio",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Estoque insuficiente para o produto Produto Teste Swagger. Disponível: 10, solicitado: 15."
+                }
+            }
+        },
+    },
+    422: {
+        "description": "Dados enviados inválidos",
+    },
+}
 
 
 @router.post(
     "/orders",
     response_model=OrderResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    responses=ERROR_RESPONSES,
 )
 def create_order(
     order_data: OrderCreate,
@@ -28,7 +58,10 @@ def create_order(
 @router.get(
     "/orders/{order_id}",
     response_model=OrderResponse,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: ERROR_RESPONSES[404],
+    },
 )
 def get_order(
     order_id: int,
@@ -41,7 +74,7 @@ def get_order(
 @router.get(
     "/orders",
     response_model=list[OrderResponse],
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
 )
 def get_all_orders(
     db: Session = Depends(get_db)
@@ -53,7 +86,12 @@ def get_all_orders(
 @router.patch(
     "/orders/{order_id}/status",
     response_model=OrderResponse,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: ERROR_RESPONSES[404],
+        409: ERROR_RESPONSES[409],
+        422: ERROR_RESPONSES[422],
+    },
 )
 def update_order_status(
     order_id: int,
