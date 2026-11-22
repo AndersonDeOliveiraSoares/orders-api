@@ -115,7 +115,10 @@ class RabbitMQConsumer:
                     requeue=False,
                 )
 
-                print("Limite de tentativas atingido. Mensagem enviada à DLQ.")
+                print(
+                    "Limite de tentativas atingido. "
+                    "Mensagem enviada à DLQ."
+                )
 
             return
 
@@ -168,7 +171,13 @@ class RabbitMQConsumer:
                 ack_nack_callback=on_confirm,
             )
 
-            headers = dict(properties.headers or {})
+            headers = dict(
+                properties.headers or {}
+            ) if properties else {}
+
+            retry_count = self._get_retry_count(properties)
+
+            headers["x-retry-count"] = retry_count + 1
 
             channel.basic_publish(
                 exchange="orders.retry.exchange",
@@ -178,7 +187,9 @@ class RabbitMQConsumer:
                     headers=headers,
                     delivery_mode=2,
                     content_type=(
-                        properties.content_type or "application/json"
+                        properties.content_type
+                        if properties and properties.content_type
+                        else "application/json"
                     ),
                 ),
                 mandatory=True,
@@ -252,13 +263,8 @@ class RabbitMQConsumer:
             return 0
 
         headers = properties.headers or {}
-        deaths = headers.get("x-death", [])
 
-        for death in deaths:
-            if (
-                death.get("queue") == "orders.retry"
-                and death.get("reason") == "expired"
-            ):
-                return death.get("count", 0)
-
-        return 0
+        try:
+            return int(headers.get("x-retry-count", 0))
+        except (TypeError, ValueError):
+            return 0

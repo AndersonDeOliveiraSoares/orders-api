@@ -1,12 +1,14 @@
-import pika
-import pytest
 
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pika
+import pytest
+
 from app.messaging.rabbitmq_consumer import RabbitMQConsumer
 
-def test_retry_count_without_x_death():
+
+def test_retry_count_without_retry_header():
     consumer = RabbitMQConsumer(
         rabbitmq_connection=Mock(),
     )
@@ -23,13 +25,7 @@ def test_retry_count_after_first_retry():
 
     properties = SimpleNamespace(
         headers={
-            "x-death": [
-                {
-                    "queue": "orders.retry",
-                    "reason": "expired",
-                    "count": 1,
-                }
-            ]
+            "x-retry-count": 1,
         }
     )
 
@@ -43,20 +39,14 @@ def test_retry_count_after_second_retry():
 
     properties = SimpleNamespace(
         headers={
-            "x-death": [
-                {
-                    "queue": "orders.retry",
-                    "reason": "expired",
-                    "count": 2,
-                }
-            ]
+            "x-retry-count": 2,
         }
     )
 
     assert consumer._get_retry_count(properties) == 2
 
 
-def test_retry_count_ignores_other_queues():
+def test_retry_count_ignores_x_death():
     consumer = RabbitMQConsumer(
         rabbitmq_connection=Mock(),
     )
@@ -65,8 +55,8 @@ def test_retry_count_ignores_other_queues():
         headers={
             "x-death": [
                 {
-                    "queue": "orders.events",
-                    "reason": "rejected",
+                    "queue": "orders.retry",
+                    "reason": "expired",
                     "count": 5,
                 }
             ]
@@ -74,6 +64,7 @@ def test_retry_count_ignores_other_queues():
     )
 
     assert consumer._get_retry_count(properties) == 0
+
 
 def test_invalid_json_message_is_rejected():
     consumer = RabbitMQConsumer(
@@ -99,6 +90,7 @@ def test_invalid_json_message_is_rejected():
         delivery_tag=123,
         requeue=False,
     )
+
 
 def test_publish_retry_success(monkeypatch):
     consumer = RabbitMQConsumer(
@@ -150,10 +142,69 @@ def test_publish_retry_success(monkeypatch):
     assert publish_args["mandatory"] is True
 
     assert publish_args["properties"].headers == {
-        "correlation_id": "123"
+        "correlation_id": "123",
+        "x-retry-count": 1,
+    }
+
+    assert publish_args["properties"].delivery_mode == 2
+    assert publish_args["properties"].content_type == "application/json"
+
+    connection.close.assert_called_once()
+
+
+def test_publish_retry_preserves_previous_retry_count(monkeypatch):
+    consumer = RabbitMQConsumer(
+        rabbitmq_connection=Mock(),
+    )
+
+    channel = Mock()
+    connection = Mock()
+    connection.connect.return_value = channel
+
+    callbacks = {}
+
+    def confirm_delivery(ack_nack_callback):
+        callbacks["confirm"] = ack_nack_callback
+
+    def basic_publish(**kwargs):
+        kwargs["on_publish"](1)
+
+        callbacks["confirm"](
+            SimpleNamespace(
+                method=pika.spec.Basic.Ack(),
+            )
+        )
+
+    channel.confirm_delivery.side_effect = confirm_delivery
+    channel.basic_publish.side_effect = basic_publish
+
+    monkeypatch.setattr(
+        "app.messaging.rabbitmq_consumer.RabbitMQConnection",
+        lambda: connection,
+    )
+
+    properties = pika.BasicProperties(
+        headers={
+            "correlation_id": "123",
+            "x-retry-count": 1,
+        },
+        content_type="application/json",
+    )
+
+    consumer._publish_retry(
+        properties,
+        b'{"order_id": 10}',
+    )
+
+    publish_args = channel.basic_publish.call_args.kwargs
+
+    assert publish_args["properties"].headers == {
+        "correlation_id": "123",
+        "x-retry-count": 2,
     }
 
     connection.close.assert_called_once()
+
 
 def test_publish_retry_rejected(monkeypatch):
     consumer = RabbitMQConsumer(
@@ -198,6 +249,7 @@ def test_publish_retry_rejected(monkeypatch):
 
     connection.close.assert_called_once()
 
+
 def test_publish_retry_timeout(monkeypatch):
     consumer = RabbitMQConsumer(
         rabbitmq_connection=Mock(),
@@ -208,7 +260,10 @@ def test_publish_retry_timeout(monkeypatch):
     connection.connect.return_value = channel
 
     channel.confirm_delivery.return_value = None
-    channel.basic_publish.side_effect = lambda **kwargs: kwargs["on_publish"](1)
+
+    channel.basic_publish.side_effect = (
+        lambda **kwargs: kwargs["on_publish"](1)
+    )
 
     monkeypatch.setattr(
         "app.messaging.rabbitmq_consumer.RabbitMQConnection",
@@ -226,6 +281,7 @@ def test_publish_retry_timeout(monkeypatch):
         consumer._publish_retry(properties, body)
 
     connection.close.assert_called_once()
+
 
 def test_on_message_first_failure_sends_to_retry():
     consumer = RabbitMQConsumer(
@@ -263,6 +319,7 @@ def test_on_message_first_failure_sends_to_retry():
 
     channel.basic_nack.assert_not_called()
 
+
 def test_on_message_second_failure_sends_to_retry():
     consumer = RabbitMQConsumer(
         rabbitmq_connection=Mock(),
@@ -280,13 +337,7 @@ def test_on_message_second_failure_sends_to_retry():
 
     properties = pika.BasicProperties(
         headers={
-            "x-death": [
-                {
-                    "queue": "orders.retry",
-                    "reason": "expired",
-                    "count": 1,
-                }
-            ]
+            "x-retry-count": 1,
         }
     )
 
@@ -328,13 +379,7 @@ def test_on_message_third_failure_sends_to_dlq():
 
     properties = pika.BasicProperties(
         headers={
-            "x-death": [
-                {
-                    "queue": "orders.retry",
-                    "reason": "expired",
-                    "count": 2,
-                }
-            ]
+            "x-retry-count": 2,
         }
     )
 
