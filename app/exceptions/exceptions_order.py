@@ -22,3 +22,6 @@ class InsufficientStockException(ConflictException):
 
 class InvalidOrderStatusException(ConflictException):
     """Transição de status não permitida."""
+
+class IdempotencyKeyPayloadMismatchException(ConflictException):
+    """Chave idempotente reutilizada com conteúdo diferente."""

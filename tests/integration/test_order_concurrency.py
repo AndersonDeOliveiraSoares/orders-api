@@ -1,4 +1,7 @@
+from uuid import uuid4
 
+from app.models.models_idempotency import IdempotencyKey
+from app.repositories.repository_idempotency import IdempotencyRepository
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, current_thread
 from time import monotonic, sleep
@@ -204,6 +207,234 @@ def test_concurrent_orders_cannot_oversell_stock(monkeypatch):
         cleanup_session = Session(test_engine)
 
         try:
+            orders = cleanup_session.scalars(
+                select(Order).where(
+                    Order.customer_id == customer_id
+                )
+            ).all()
+
+            order_ids = [order.id for order in orders]
+
+            if order_ids:
+                cleanup_session.query(OrderItem).filter(
+                    OrderItem.order_id.in_(order_ids)
+                ).delete(synchronize_session=False)
+
+                cleanup_session.query(Order).filter(
+                    Order.id.in_(order_ids)
+                ).delete(synchronize_session=False)
+
+            cleanup_session.query(Customer).filter(
+                Customer.id == customer_id
+            ).delete(synchronize_session=False)
+
+            cleanup_session.query(Product).filter(
+                Product.id == product_id
+            ).delete(synchronize_session=False)
+
+            cleanup_session.commit()
+
+        except Exception:
+            cleanup_session.rollback()
+            raise
+
+        finally:
+            cleanup_session.close()
+
+
+def test_concurrent_orders_with_same_idempotency_key(monkeypatch):
+    first_key_reserved = Event()
+    second_attempting_key = Event()
+    release_first_transaction = Event()
+
+    setup_session = Session(test_engine)
+
+    try:
+        customer = Customer(
+            name="Cliente Idempotencia Concorrencia",
+            email=f"idempotency-{uuid4()}@example.com",
+        )
+
+        product = Product(
+            name="Produto Idempotencia Concorrencia",
+            price=100.00,
+            stock=5,
+        )
+
+        setup_session.add_all([customer, product])
+        setup_session.commit()
+
+        customer_id = customer.id
+        product_id = product.id
+
+    finally:
+        setup_session.close()
+
+    idempotency_key = str(uuid4())
+
+    original_try_create = IdempotencyRepository.try_create
+    second_backend_pid = None
+
+    def controlled_try_create(
+        repository,
+        key,
+        request_hash,
+    ):
+        nonlocal second_backend_pid
+
+        if current_thread().name.endswith("_0"):
+            result = original_try_create(
+                repository,
+                key,
+                request_hash,
+            )
+
+            first_key_reserved.set()
+
+            if not release_first_transaction.wait(timeout=10):
+                raise TimeoutError(
+                    "A primeira transacao nao foi liberada."
+                )
+
+            return result
+
+        second_backend_pid = repository.db.execute(
+            text("SELECT pg_backend_pid()")
+        ).scalar_one()
+
+        second_attempting_key.set()
+
+        return original_try_create(
+            repository,
+            key,
+            request_hash,
+        )
+
+    monkeypatch.setattr(
+        IdempotencyRepository,
+        "try_create",
+        controlled_try_create,
+    )
+
+    def create_order():
+        session = Session(test_engine)
+
+        try:
+            order_data = OrderCreate(
+                customer_id=customer_id,
+                items=[
+                    OrderItemCreate(
+                        product_id=product_id,
+                        quantity=4,
+                    )
+                ],
+            )
+
+            return OrderService(session).create_order(
+                order_data,
+                idempotency_key=idempotency_key,
+            )
+
+        finally:
+            session.close()
+
+    try:
+        with ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="idempotency-concurrency",
+        ) as executor:
+
+            first_future = executor.submit(create_order)
+
+            assert first_key_reserved.wait(timeout=10), (
+                "A primeira requisicao nao reservou a chave."
+            )
+
+            second_future = executor.submit(create_order)
+
+            assert second_attempting_key.wait(timeout=10), (
+                "A segunda requisicao nao tentou reservar a chave."
+            )
+
+            verification_session = Session(test_engine)
+
+            try:
+                deadline = monotonic() + 10
+                second_is_waiting = False
+
+                while monotonic() < deadline:
+                    wait_event = verification_session.execute(
+                        text(
+                            """
+                            SELECT wait_event_type
+                            FROM pg_stat_activity
+                            WHERE pid = :pid
+                            """
+                        ),
+                        {"pid": second_backend_pid},
+                    ).scalar_one_or_none()
+
+                    if wait_event == "Lock":
+                        second_is_waiting = True
+                        break
+
+                    sleep(0.05)
+
+                assert second_is_waiting, (
+                    "A segunda transacao nao foi observada "
+                    "aguardando a chave no PostgreSQL."
+                )
+
+            finally:
+                verification_session.close()
+
+            release_first_transaction.set()
+
+            first_order = first_future.result(timeout=20)
+            second_order = second_future.result(timeout=20)
+
+        assert first_order.id == second_order.id
+
+        verification_session = Session(test_engine)
+
+        try:
+            product_after = verification_session.get(
+                Product,
+                product_id,
+            )
+
+            assert product_after.stock == 1
+
+            orders = verification_session.scalars(
+                select(Order).where(
+                    Order.customer_id == customer_id
+                )
+            ).all()
+
+            assert len(orders) == 1
+
+            idempotency_records = verification_session.scalars(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.idempotency_key == idempotency_key
+                )
+            ).all()
+
+            assert len(idempotency_records) == 1
+            assert idempotency_records[0].order_id == first_order.id
+
+        finally:
+            verification_session.close()
+
+    finally:
+        release_first_transaction.set()
+
+        cleanup_session = Session(test_engine)
+
+        try:
+            cleanup_session.query(IdempotencyKey).filter(
+                IdempotencyKey.idempotency_key == idempotency_key
+            ).delete(synchronize_session=False)
+
             orders = cleanup_session.scalars(
                 select(Order).where(
                     Order.customer_id == customer_id

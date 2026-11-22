@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.orm import Session
 
 from app.database.database_connection import get_db
@@ -41,6 +41,7 @@ ERROR_RESPONSES = {
 }
 
 
+
 @router.post(
     "/orders",
     response_model=OrderResponse,
@@ -49,10 +50,19 @@ ERROR_RESPONSES = {
 )
 def create_order(
     order_data: OrderCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        max_length=255,
+    ),
 ):
     service = OrderService(db)
-    return service.create_order(order_data)
+
+    return service.create_order(
+        order_data,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.get(
