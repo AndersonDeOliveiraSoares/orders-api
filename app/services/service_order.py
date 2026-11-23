@@ -123,6 +123,7 @@ class OrderService:
         self,
         order_data: OrderCreate,
         idempotency_key: str | None = None,
+        correlation_id: str | None = None,
     ) -> Order:
         try:
             if idempotency_key:
@@ -205,6 +206,7 @@ class OrderService:
                     event_type="ORDER_CREATED",
                     aggregate_type="ORDER",
                     aggregate_id=order.id,
+                    correlation_id=correlation_id,
                     payload={
                         "order_id": order.id,
                         "customer_id": order.customer_id,

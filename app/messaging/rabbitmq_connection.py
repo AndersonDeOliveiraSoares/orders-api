@@ -39,8 +39,7 @@ class RabbitMQConnection:
         return self.channel
 
     def close(self):
-        if self.channel and self.channel.is_open:
-            self.channel.close()
-
-        if self.connection and self.connection.is_open:
+        if self.connection:
             self.connection.close()
+            self.channel = None
+            self.connection = None

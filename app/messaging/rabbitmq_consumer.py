@@ -1,10 +1,14 @@
 
 import json
+import logging
 import threading
 
 import pika
 
 from app.messaging.rabbitmq_connection import RabbitMQConnection
+
+
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQConsumer:
@@ -49,37 +53,46 @@ class RabbitMQConsumer:
             routing_key=self.routing_key,
         )
 
+        logger.info(
+            "RabbitMQ Consumer conectado",
+            extra={"queue": self.queue},
+        )
+
     def process_message(self, body: bytes):
         message = json.loads(body)
 
-        print("Evento recebido:")
-        print(
-            json.dumps(
-                message,
-                indent=4,
-                ensure_ascii=False,
-            )
+        logger.info(
+            "Evento recebido",
+            extra={
+                "event_id": message.get("event_id"),
+                "event_type": message.get("event_type"),
+                "aggregate_type": message.get("aggregate_type"),
+                "aggregate_id": message.get("aggregate_id"),
+                "correlation_id": message.get("correlation_id"),
+            },
         )
 
     def on_message(self, channel, method, properties, body):
+        retry_count = self._get_retry_count(properties)
+
         try:
             self.process_message(body)
 
-        except json.JSONDecodeError as exc:
-            print(f"Mensagem JSON inválida: {exc}")
+        except json.JSONDecodeError:
+            logger.exception("Mensagem JSON inválida")
 
             channel.basic_nack(
                 delivery_tag=method.delivery_tag,
                 requeue=False,
             )
 
-            print("Mensagem inválida encaminhada para DLQ.")
+            logger.warning(
+                "Mensagem inválida encaminhada para DLQ"
+            )
             return
 
-        except Exception as exc:
-            print(f"Erro ao processar mensagem: {exc}")
-
-            retry_count = self._get_retry_count(properties)
+        except Exception:
+            logger.exception("Erro ao processar mensagem")
 
             if retry_count < 2:
                 try:
@@ -89,15 +102,17 @@ class RabbitMQConsumer:
                         delivery_tag=method.delivery_tag,
                     )
 
-                    print(
-                        f"Mensagem encaminhada para Retry "
-                        f"{retry_count + 1}/2."
+                    logger.warning(
+                        "Mensagem encaminhada para Retry",
+                        extra={
+                            "retry_count": retry_count + 1,
+                            "max_retries": 2,
+                        },
                     )
 
-                except Exception as retry_exc:
-                    print(
-                        f"Erro ao publicar mensagem no Retry: "
-                        f"{retry_exc}"
+                except Exception:
+                    logger.exception(
+                        "Erro ao publicar mensagem no Retry"
                     )
 
                     channel.basic_nack(
@@ -105,8 +120,8 @@ class RabbitMQConsumer:
                         requeue=True,
                     )
 
-                    print(
-                        "Mensagem devolvida à fila para nova tentativa."
+                    logger.warning(
+                        "Mensagem devolvida à fila para nova tentativa"
                     )
 
             else:
@@ -115,9 +130,12 @@ class RabbitMQConsumer:
                     requeue=False,
                 )
 
-                print(
-                    "Limite de tentativas atingido. "
-                    "Mensagem enviada à DLQ."
+                logger.error(
+                    "Limite de tentativas atingido. Mensagem enviada à DLQ",
+                    extra={
+                        "retry_count": retry_count,
+                        "max_retries": 2,
+                    },
                 )
 
             return
@@ -126,7 +144,7 @@ class RabbitMQConsumer:
             delivery_tag=method.delivery_tag,
         )
 
-        print("Mensagem confirmada (ACK).")
+        logger.info("Mensagem confirmada (ACK)")
 
     def _publish_retry(self, properties, body: bytes):
         connection = RabbitMQConnection()
@@ -223,40 +241,52 @@ class RabbitMQConsumer:
                         "RabbitMQ devolveu a mensagem de Retry."
                     )
 
+            logger.info(
+                "Publicação no Retry confirmada",
+                extra={
+                    "retry_count": retry_count + 1,
+                },
+            )
+
         finally:
             connection.close()
 
     def start(self):
         self.stop_event.clear()
 
-        self.connect()
-
-        self.channel.basic_qos(
-            prefetch_count=1,
-        )
-
-        self.channel.basic_consume(
-            queue=self.queue,
-            on_message_callback=self.on_message,
-            auto_ack=False,
-        )
-
-        print(f"Consumindo fila: {self.queue}")
-        print("Aguardando mensagens... Pressione Ctrl+C para sair.")
-
         try:
+            self.connect()
+
+            self.channel.basic_qos(
+                prefetch_count=1,
+            )
+
+            self.channel.basic_consume(
+                queue=self.queue,
+                on_message_callback=self.on_message,
+                auto_ack=False,
+            )
+
+            logger.info(
+                "Consumidor aguardando mensagens",
+                extra={"queue": self.queue},
+            )
+
             self.stop_event.wait()
 
         except KeyboardInterrupt:
-            print("\nEncerrando consumidor...")
+            logger.info("Solicitado encerramento do consumidor")
 
         finally:
             self.close()
 
     def close(self):
         self.stop_event.set()
-        self.rabbitmq.close()
-        print("Consumidor encerrado.")
+
+        if self.rabbitmq.connection:
+            self.rabbitmq.close()
+
+        logger.info("Consumidor encerrado")
 
     def _get_retry_count(self, properties) -> int:
         if properties is None:

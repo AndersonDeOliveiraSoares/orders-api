@@ -1,4 +1,6 @@
 
+import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -6,6 +8,41 @@ import pika
 import pytest
 
 from app.messaging.rabbitmq_consumer import RabbitMQConsumer
+
+
+def test_process_message_logs_correlation_id(caplog):
+    consumer = RabbitMQConsumer()
+
+    correlation_id = "123e4567-e89b-12d3-a456-426614174000"
+
+    body = json.dumps(
+        {
+            "event_id": 1,
+            "event_type": "ORDER_CREATED",
+            "aggregate_type": "ORDER",
+            "aggregate_id": 100,
+            "correlation_id": correlation_id,
+            "payload": {
+                "order_id": 100,
+            },
+        }
+    ).encode("utf-8")
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="app.messaging.rabbitmq_consumer",
+    ):
+        consumer.process_message(body)
+
+    event_log = next(
+        record
+        for record in caplog.records
+        if record.message == "Evento recebido"
+    )
+
+    assert event_log.correlation_id == correlation_id
+    assert event_log.event_type == "ORDER_CREATED"
+    assert event_log.aggregate_id == 100
 
 
 def test_retry_count_without_retry_header():
@@ -437,3 +474,52 @@ def test_on_message_retry_publish_failure_requeues_message():
         delivery_tag=999,
         requeue=True,
     )
+
+
+
+def test_consumer_start_starts_consuming(monkeypatch):
+    rabbitmq = Mock()
+    channel = Mock()
+
+    rabbitmq.connect.return_value = channel
+
+    consumer = RabbitMQConsumer(
+        rabbitmq_connection=rabbitmq,
+    )
+
+    monkeypatch.setattr(
+        consumer.stop_event,
+        "wait",
+        lambda: None,
+    )
+
+    consumer.start()
+
+    channel.basic_qos.assert_called_once_with(
+        prefetch_count=1,
+    )
+
+    channel.basic_consume.assert_called_once_with(
+        queue="orders.events",
+        on_message_callback=consumer.on_message,
+        auto_ack=False,
+    )
+
+    rabbitmq.close.assert_called_once()
+
+
+
+def test_consumer_close_stops_consuming():
+    from unittest.mock import Mock
+
+    rabbitmq = Mock()
+    rabbitmq.connection = Mock()
+
+    consumer = RabbitMQConsumer(
+        rabbitmq_connection=rabbitmq,
+    )
+
+    consumer.close()
+
+    assert consumer.stop_event.is_set()
+    rabbitmq.close.assert_called_once()

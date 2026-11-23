@@ -1,5 +1,6 @@
 
 import json
+import logging
 import threading
 
 import pika
@@ -7,6 +8,9 @@ import pika
 from app.database.database_connection import SessionLocal
 from app.messaging.rabbitmq_connection import RabbitMQConnection
 from app.repositories.repository_outbox import OutboxRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class OutboxPublisher:
@@ -79,6 +83,22 @@ class OutboxPublisher:
                 publish_state["returned"] = True
                 condition.notify_all()
 
+            logger.error(
+                "RabbitMQ devolveu mensagem publicada",
+                extra={
+                    "exchange": self.exchange,
+                    "routing_key": self.routing_key,
+                },
+            )
+
+        logger.info(
+            "Iniciando publicação de eventos da Outbox",
+            extra={
+                "limit": limit,
+                "event_ids": event_ids,
+            },
+        )
+
         try:
             channel = self.rabbitmq.connect()
 
@@ -103,6 +123,7 @@ class OutboxPublisher:
 
             channel.confirm_delivery(
                 ack_nack_callback=on_confirm,
+                timeout=self.CONFIRM_TIMEOUT_SECONDS,
             )
 
             with self.session_factory() as db:
@@ -113,6 +134,13 @@ class OutboxPublisher:
                     event_ids=event_ids,
                 )
 
+                logger.info(
+                    "Eventos pendentes encontrados",
+                    extra={
+                        "events_count": len(events),
+                    },
+                )
+
                 for event in events:
                     try:
                         message = json.dumps(
@@ -121,6 +149,7 @@ class OutboxPublisher:
                                 "event_type": event.event_type,
                                 "aggregate_type": event.aggregate_type,
                                 "aggregate_id": event.aggregate_id,
+                                "correlation_id": event.correlation_id,
                                 "payload": event.payload,
                             }
                         )
@@ -175,16 +204,57 @@ class OutboxPublisher:
                             confirmed_tags.discard(delivery_tag)
                             rejected_tags.discard(delivery_tag)
 
+                        logger.info(
+                            "Evento confirmado pelo RabbitMQ",
+                            extra={
+                                "event_id": event.id,
+                                "event_type": event.event_type,
+                                "aggregate_id": event.aggregate_id,
+                                "correlation_id": event.correlation_id,
+                            },
+                        )
+
                         repository.mark_as_published(event)
                         db.commit()
 
                         published_count += 1
 
+                        logger.info(
+                            "Evento marcado como publicado na Outbox",
+                            extra={
+                                "event_id": event.id,
+                                "aggregate_id": event.aggregate_id,
+                                "correlation_id": event.correlation_id,
+                            },
+                        )
+
                     except Exception:
                         db.rollback()
+
+                        logger.exception(
+                            "Falha ao publicar evento da Outbox",
+                            extra={
+                                "event_id": event.id,
+                                "aggregate_id": event.aggregate_id,
+                            },
+                        )
+
                         raise
+
+        except Exception:
+            logger.exception(
+                "Falha durante processamento da Outbox"
+            )
+            raise
 
         finally:
             self.rabbitmq.close()
+
+            logger.info(
+                "Publicação da Outbox encerrada",
+                extra={
+                    "published_count": published_count,
+                },
+            )
 
         return published_count

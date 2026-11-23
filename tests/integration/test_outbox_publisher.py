@@ -18,6 +18,7 @@ def test_outbox_event_is_published_to_rabbitmq():
     )
 
     unique_id = uuid4().hex
+    correlation_id = str(uuid4())
     aggregate_id = uuid4().int % 1_000_000_000 + 1
 
     exchange_name = f"test.orders.{unique_id}"
@@ -34,6 +35,7 @@ def test_outbox_event_is_published_to_rabbitmq():
                 event_type="ORDER_CREATED",
                 aggregate_type="ORDER",
                 aggregate_id=aggregate_id,
+                correlation_id=correlation_id,
                 payload={
                     "order_id": aggregate_id,
                     "customer_id": 1,
@@ -103,6 +105,7 @@ def test_outbox_event_is_published_to_rabbitmq():
         assert message["event_type"] == "ORDER_CREATED"
         assert message["aggregate_type"] == "ORDER"
         assert message["aggregate_id"] == aggregate_id
+        assert message["correlation_id"] == correlation_id
         assert message["payload"]["order_id"] == aggregate_id
 
         # Confirma a atualização do evento no PostgreSQL.

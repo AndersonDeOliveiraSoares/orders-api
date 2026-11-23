@@ -45,6 +45,11 @@ class OutboxEvent(Base):
         nullable=False,
     )
 
+    correlation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+    )
+
     payload: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,

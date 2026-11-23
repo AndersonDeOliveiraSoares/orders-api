@@ -6,8 +6,10 @@ from app.routes.router_health import router as health_router
 from app.routes.routes_customer import router as customer_router
 from app.routes.routes_order import router as order_router
 from app.routes.routes_product import router as product_router
+from app.core.logging_config import configure_logging
 
 
+configure_logging()
 app = FastAPI(title="Orders API")
 
 

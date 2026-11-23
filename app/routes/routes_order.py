@@ -1,4 +1,6 @@
 
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.orm import Session
 
@@ -41,7 +43,6 @@ ERROR_RESPONSES = {
 }
 
 
-
 @router.post(
     "/orders",
     response_model=OrderResponse,
@@ -57,11 +58,14 @@ def create_order(
         max_length=255,
     ),
 ):
+    correlation_id = str(uuid4())
+
     service = OrderService(db)
 
     return service.create_order(
         order_data,
         idempotency_key=idempotency_key,
+        correlation_id=correlation_id,
     )
 
 
