@@ -111,6 +111,10 @@ class OutboxPublisher:
             channel.queue_declare(
                 queue=self.queue,
                 durable=True,
+                arguments={
+                    "x-dead-letter-exchange": "orders.dlx",
+                    "x-dead-letter-routing-key": "orders.dead",
+                },
             )
 
             channel.queue_bind(
