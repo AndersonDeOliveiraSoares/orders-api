@@ -67,6 +67,10 @@ def test_outbox_event_is_published_to_rabbitmq():
             durable=True,
             exclusive=False,
             auto_delete=False,
+            arguments={
+                "x-dead-letter-exchange": "orders.dlx",
+                "x-dead-letter-routing-key": "orders.dead",
+            },
         )
 
         # Vincula a fila ao exchange.

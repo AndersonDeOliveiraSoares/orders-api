@@ -4,9 +4,11 @@ import logging
 import threading
 
 import pika
+from sqlalchemy.dialects.postgresql import insert
 
+from app.database.database_connection import SessionLocal
 from app.messaging.rabbitmq_connection import RabbitMQConnection
-
+from app.models.models_processed_event import ProcessedEvent
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +21,14 @@ class RabbitMQConsumer:
         exchange="orders",
         queue="orders.events",
         routing_key="order.created",
+        session_factory=SessionLocal,
     ):
         self.rabbitmq = rabbitmq_connection or RabbitMQConnection()
 
         self.exchange = exchange
         self.queue = queue
         self.routing_key = routing_key
+        self.session_factory = session_factory
 
         self.channel = None
         self.stop_event = threading.Event()
@@ -58,13 +62,21 @@ class RabbitMQConsumer:
             extra={"queue": self.queue},
         )
 
-    def process_message(self, body: bytes):
+    def process_message(self, body: bytes) -> dict:
         message = json.loads(body)
+
+        if not isinstance(message, dict):
+            raise ValueError("O conteúdo da mensagem deve ser um objeto JSON.")
+
+        event_id = message.get("event_id")
+
+        if event_id is None or str(event_id).strip() == "":
+            raise ValueError("Mensagem sem event_id.")
 
         logger.info(
             "Evento recebido",
             extra={
-                "event_id": message.get("event_id"),
+                "event_id": event_id,
                 "event_type": message.get("event_type"),
                 "aggregate_type": message.get("aggregate_type"),
                 "aggregate_id": message.get("aggregate_id"),
@@ -72,11 +84,67 @@ class RabbitMQConsumer:
             },
         )
 
+        return message
+
+    def register_processed_event(self, db, event_id: str) -> bool:
+        statement = (
+            insert(ProcessedEvent)
+            .values(event_id=str(event_id))
+            .on_conflict_do_nothing(
+                index_elements=[ProcessedEvent.event_id],
+            )
+            .returning(ProcessedEvent.id)
+        )
+
+        result = db.execute(statement)
+
+        registered_id = result.scalar_one_or_none()
+
+        if registered_id is None:
+            logger.info(
+                "Evento já processado. Ignorando duplicidade.",
+                extra={"event_id": event_id},
+            )
+            return False
+
+        return True
+
+    def process_event(self, db, message: dict):
+        """
+        Ponto de entrada para as operações de negócio do evento.
+
+        As operações futuras devem utilizar esta mesma sessão db,
+        para compartilhar a transação com o registro de idempotência.
+        """
+        pass
+
     def on_message(self, channel, method, properties, body):
         retry_count = self._get_retry_count(properties)
 
         try:
-            self.process_message(body)
+            message = self.process_message(body)
+
+            event_id = message["event_id"]
+
+            with self.session_factory.begin() as db:
+                is_new_event = self.register_processed_event(
+                    db,
+                    event_id,
+                )
+
+                if is_new_event:
+                    self.process_event(db, message)
+
+            if not is_new_event:
+                channel.basic_ack(
+                    delivery_tag=method.delivery_tag,
+                )
+
+                logger.info(
+                    "Mensagem duplicada confirmada (ACK)",
+                    extra={"event_id": event_id},
+                )
+                return
 
         except json.JSONDecodeError:
             logger.exception("Mensagem JSON inválida")
@@ -86,9 +154,7 @@ class RabbitMQConsumer:
                 requeue=False,
             )
 
-            logger.warning(
-                "Mensagem inválida encaminhada para DLQ"
-            )
+            logger.warning("Mensagem inválida encaminhada para DLQ")
             return
 
         except Exception:
