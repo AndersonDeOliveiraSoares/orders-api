@@ -111,12 +111,45 @@ class RabbitMQConsumer:
 
     def process_event(self, db, message: dict):
         """
-        Ponto de entrada para as operações de negócio do evento.
+        Valida e registra o processamento do evento ORDER_CREATED.
 
-        As operações futuras devem utilizar esta mesma sessão db,
-        para compartilhar a transação com o registro de idempotência.
+        O registro de idempotência e o processamento compartilham
+        a mesma transação.
         """
-        pass
+        event_type = message.get("event_type")
+        aggregate_type = message.get("aggregate_type")
+        aggregate_id = message.get("aggregate_id")
+        payload = message.get("payload")
+
+        if event_type != "ORDER_CREATED":
+            raise ValueError(
+                f"Tipo de evento não suportado: {event_type}"
+            )
+
+        if aggregate_type != "ORDER":
+            raise ValueError(
+                f"Tipo de agregado inválido: {aggregate_type}"
+            )
+
+        if not isinstance(payload, dict):
+            raise ValueError("Payload do evento inválido.")
+
+        order_id = payload.get("order_id")
+
+        if order_id is None or str(order_id) != str(aggregate_id):
+            raise ValueError(
+                "O order_id do payload não corresponde ao aggregate_id."
+            )
+
+        logger.info(
+            "Evento ORDER_CREATED processado com sucesso",
+            extra={
+                "event_id": message["event_id"],
+                "order_id": order_id,
+                "customer_id": payload.get("customer_id"),
+                "correlation_id": message.get("correlation_id"),
+            },
+        )
 
     def on_message(self, channel, method, properties, body):
         retry_count = self._get_retry_count(properties)
