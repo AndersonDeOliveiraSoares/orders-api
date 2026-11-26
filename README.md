@@ -21,11 +21,12 @@ O objetivo é simular componentes e desafios comuns de sistemas comerciais, com 
 - [Endpoints disponíveis](#endpoints-disponíveis)
 - [Tratamento de erros](#tratamento-de-erros)
 - [Estrutura do projeto](#estrutura-do-projeto)
-- [Configuração e execução local](#configuração-e-execução-local)
+- [Configuração e execução com Docker](#configuração-e-execução-com-docker)
+- [Execução em ambiente local](#execução-em-ambiente-local)
 - [Banco de dados de testes](#banco-de-dados-de-testes)
 - [Testes automatizados](#testes-automatizados)
 - [Integração contínua](#integração-contínua)
-- [Roadmap](#roadmap)
+- [Validação da integração](#validação-da-integração)
 
 ---
 
@@ -52,6 +53,7 @@ A aplicação implementa regras de negócio para controlar operações comerciai
 - Estratégia de Retry e Dead Letter Queue (DLQ).
 - Logs estruturados e correlation ID.
 - Testes automatizados e integração contínua com GitHub Actions.
+- Containerização da aplicação e infraestrutura com Docker Compose.
 
 ---
 
@@ -71,7 +73,7 @@ A aplicação implementa regras de negócio para controlar operações comerciai
 | Pytest | Testes automatizados |
 | Pytest-cov | Cobertura de testes |
 | HTTPX | Cliente HTTP utilizado nos testes |
-| Docker Compose | Infraestrutura local |
+| Docker Compose | Containerização e infraestrutura |
 | GitHub Actions | Integração contínua |
 | Git | Controle de versão |
 
@@ -87,16 +89,16 @@ O projeto utiliza arquitetura em camadas, separando responsabilidades e facilita
 Cliente HTTP
      |
      v
-  Routes
+   Routes
      |
      v
-  Schemas
+   Schemas
      |
      v
-  Services
+   Services
      |
      v
-Repositories
+  Repositories
      |
      v
    Models
@@ -246,25 +248,19 @@ O Outbox Publisher é executado automaticamente pelo Worker em uma thread separa
 
 ### RabbitMQ Consumer e Worker
 
-O projeto possui um Worker independente, executado por:
+O projeto possui um Worker independente, responsável pela publicação e pelo consumo assíncrono dos eventos.
 
-```powershell
-python -m app.worker.main
-```
+O Worker:
 
-O Worker executa o Outbox Publisher periodicamente e mantém o Consumer aguardando mensagens na fila `orders.events`.
-
-O consumidor implementa:
-
-- Conexão com RabbitMQ.
-- Consumo da fila `orders.events`.
-- Validação do conteúdo JSON.
-- Identificação dos eventos por `event_id`.
-- Registro de eventos processados na tabela `processed_events`.
-- Confirmação de mensagens com ACK.
-- Encaminhamento de mensagens inválidas para DLQ.
-- Estratégia de Retry com até duas novas tentativas.
-- Confirmação de publicação das mensagens de Retry.
+- Executa o Outbox Publisher periodicamente.
+- Mantém o Consumer aguardando mensagens na fila `orders.events`.
+- Valida o conteúdo JSON.
+- Identifica os eventos por `event_id`.
+- Registra eventos processados na tabela `processed_events`.
+- Confirma mensagens com ACK.
+- Encaminha mensagens inválidas para DLQ.
+- Implementa Retry com até duas novas tentativas.
+- Confirma a publicação das mensagens de Retry.
 
 ### Idempotência no consumidor
 
@@ -276,9 +272,7 @@ Mensagens duplicadas são reconhecidas e confirmadas sem novo processamento.
 
 O método `process_event()` valida o tipo do evento, o agregado e a consistência do identificador do pedido, além de registrar o processamento em log estruturado.
 
-O controle de idempotência impede o processamento repetido de eventos já registrados.
-
-Não há uma segunda operação de negócio associada ao evento nesta versão.
+Nesta versão, o Consumer realiza validação, controle de idempotência e registro do processamento. Não há uma segunda operação de negócio associada ao evento.
 
 ### Fluxo de processamento
 
@@ -302,7 +296,7 @@ Transação PostgreSQL
               orders.events
                     |
                     v
-              RabbitMQ Consumer
+             RabbitMQ Consumer
                     |
                     v
           Registro de idempotência
@@ -456,6 +450,7 @@ orders-api/
 ├── .env.example
 ├── alembic.ini
 ├── docker-compose.yml
+├── Dockerfile
 ├── pytest.ini
 ├── requirements.txt
 └── README.md
@@ -463,11 +458,10 @@ orders-api/
 
 ---
 
-## Configuração e execução local
+## Configuração e execução com Docker
 
 ### Pré-requisitos
 
-- Python 3.11 ou superior.
 - Git.
 - Docker Desktop com Docker Compose.
 
@@ -479,13 +473,105 @@ git clone https://github.com/AndersonDeOliveiraSoares/orders-api.git
 cd orders-api
 ```
 
-### 2. Criar o ambiente virtual
+### 2. Configurar as variáveis de ambiente
+
+Crie o arquivo `.env` a partir do modelo:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Configure as variáveis de ambiente, utilizando credenciais próprias:
+
+```env
+# PostgreSQL
+POSTGRES_DB=orders_db
+POSTGRES_USER=orders_user
+POSTGRES_PASSWORD=sua_senha
+
+# Conexão PostgreSQL para execução local
+DB_HOST=localhost
+DB_PORT=5434
+
+# RabbitMQ
+RABBITMQ_HOST=localhost
+RABBITMQ_PORT=5672
+RABBITMQ_USER=orders_user
+RABBITMQ_PASSWORD=sua_senha
+```
+
+Não publique o arquivo `.env` nem suas credenciais no repositório.
+
+### 3. Construir e iniciar os serviços
+
+```powershell
+docker compose up -d --build
+```
+
+O Docker Compose inicia os seguintes serviços:
+
+| Serviço | Responsabilidade |
+|---|---|
+| `db` | PostgreSQL 16 |
+| `rabbitmq` | RabbitMQ 4 |
+| `migrate` | Execução das migrações Alembic |
+| `api` | API REST com FastAPI |
+| `worker` | Outbox Publisher e RabbitMQ Consumer |
+
+A execução das migrações é automatizada pelo serviço `migrate`. A API e o Worker aguardam a conclusão bem-sucedida dessa etapa.
+
+### 4. Verificar os containers
+
+```powershell
+docker compose ps
+```
+
+Para consultar os logs:
+
+```powershell
+docker compose logs -f api
+```
+
+```powershell
+docker compose logs -f worker
+```
+
+### 5. Acessar a aplicação
+
+| Serviço | Endereço |
+|---|---|
+| API | `http://localhost:8000` |
+| Swagger UI | `http://localhost:8000/docs` |
+| ReDoc | `http://localhost:8000/redoc` |
+| Health Check | `http://localhost:8000/health` |
+| PostgreSQL | `localhost:5434` |
+| RabbitMQ | `localhost:5672` |
+| RabbitMQ Management | `http://localhost:15672` |
+
+O painel de administração do RabbitMQ utiliza as credenciais definidas pelas variáveis `RABBITMQ_USER` e `RABBITMQ_PASSWORD` do arquivo `.env`.
+
+### 6. Encerrar os serviços
+
+```powershell
+docker compose down
+```
+
+**Atenção:** essa operação apaga permanentemente os dados do PostgreSQL e do RabbitMQ. Para preservar os dados, utilize apenas `docker compose down`.
+Para encerrar e também remover os volumes persistentes, utilize `docker compose down -v`. Essa operação apaga os dados armazenados nos volumes e não deve ser executada se você quiser preservá-los.
+
+---
+
+## Execução em ambiente local
+
+Também é possível executar a API e o Worker diretamente no ambiente Python, mantendo PostgreSQL e RabbitMQ no Docker.
+
+### 1. Criar o ambiente virtual
 
 ```powershell
 python -m venv .venv
 ```
 
-Ativar no Windows PowerShell:
+### 2. Ativar o ambiente virtual
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -497,73 +583,31 @@ Ativar no Windows PowerShell:
 pip install -r requirements.txt
 ```
 
-### 4. Configurar as variáveis de ambiente
-
-Crie o arquivo `.env` a partir do modelo:
+### 4. Iniciar PostgreSQL e RabbitMQ
 
 ```powershell
-Copy-Item .env.example .env
+docker compose up -d db rabbitmq
 ```
 
-Configure as variáveis:
-
-```env
-POSTGRES_DB=orders_db
-POSTGRES_USER=orders_user
-POSTGRES_PASSWORD=sua_senha
-
-DB_HOST=localhost
-DB_PORT=5434
-```
-
-Não publique credenciais ou senhas no repositório.
-
-### 5. Iniciar PostgreSQL e RabbitMQ
-
-```powershell
-docker compose up -d
-```
-
-Serviços disponibilizados:
-
-| Serviço | Endereço |
-|---|---|
-| PostgreSQL | `localhost:5434` |
-| RabbitMQ | `localhost:5672` |
-| RabbitMQ Management | `http://localhost:15672` |
-
-O painel de administração do RabbitMQ utiliza as credenciais padrão `guest` / `guest` na configuração apresentada.
-
-### 6. Executar as migrações
+### 5. Executar as migrações
 
 ```powershell
 alembic upgrade head
 ```
 
-### 7. Executar a API
+### 6. Executar a API
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-A aplicação ficará disponível em:
-
-- API: `http://127.0.0.1:8000`
-- Swagger UI: `http://127.0.0.1:8000/docs`
-- ReDoc: `http://127.0.0.1:8000/redoc`
-- Health Check: `http://127.0.0.1:8000/health`
-
-### 8. Executar o Worker
+### 7. Executar o Worker
 
 Em outro terminal, com o ambiente virtual ativado:
 
 ```powershell
 python -m app.worker.main
 ```
-
-O Worker executa o Outbox Publisher periodicamente e mantém o Consumer aguardando mensagens na fila `orders.events`.
-
-**Observação:** nesta versão, PostgreSQL e RabbitMQ são executados pelo Docker Compose. A API e o Worker são executados diretamente no ambiente Python local.
 
 ---
 
@@ -622,14 +666,12 @@ pytest tests/repositories/ -v
 pytest --cov=app --cov-report=term-missing
 ```
 
-### Resultado validado
-
-As execuções completas mais recentes registradas apresentaram os seguintes resultados:
+### Resultado dos testes
 
 | Execução | Testes aprovados | Testes reprovados | Duração |
 |---|---:|---:|---:|
 | GitHub Actions | 106 | 0 | 92,32 segundos |
-| Ambiente local | 106 | 0 | 97,50 segundos |
+| Ambiente local | 106 | 0 | 94,07 segundos |
 
 A execução do GitHub Actions foi realizada em Ubuntu com Python 3.11.
 
@@ -665,36 +707,26 @@ Como o workflow executa a suíte completa, os testes de integração das transi�
 
 ---
 
-## Roadmap
+## Validação da integração
 
-### Concluído
+A integração entre API, PostgreSQL, Outbox, RabbitMQ e Consumer foi validada de ponta a ponta em ambiente Docker.
 
-- [x] Estrutura inicial do projeto.
-- [x] API REST com FastAPI.
-- [x] Customers API completa.
-- [x] Products API completa.
-- [x] Orders API.
-- [x] Regras de negócio e controle transacional.
-- [x] Ciclo de vida dos pedidos e validação das transições de status.
-- [x] Testes de integração para transições permitidas e bloqueadas.
-- [x] Devolução de estoque no cancelamento e validação da consistência do estoque.
-- [x] Controle de concorrência com `SELECT FOR UPDATE`.
-- [x] Idempotência na criação de pedidos.
-- [x] Transactional Outbox.
-- [x] Publicador com Publisher Confirms.
-- [x] Integração com RabbitMQ.
-- [x] Worker e Consumer.
-- [x] Idempotência de eventos recebidos.
-- [x] Retry e Dead Letter Queue.
-- [x] Logging estruturado e correlation ID.
-- [x] Testes automatizados.
-- [x] Integração contínua com GitHub Actions.
-- [x] Integração validada de ponta a ponta: Outbox → Publisher → RabbitMQ → Consumer.
+Na validação realizada em 26/11/2026, foi criado o pedido de identificador `181`, com valor total de R$ 3.500,00.
 
-### Próximas evoluções
+O processamento foi confirmado pelos logs dos serviços:
 
-- [ ] Containerização da API e do Worker junto à infraestrutura existente.
-- [ ] Avaliar monitoramento e métricas como evolução futura.
+1. Pedido criado e persistido no PostgreSQL.
+2. Evento `ORDER_CREATED` registrado na Outbox.
+3. Outbox Publisher identificou o evento pendente.
+4. Evento publicado no RabbitMQ com confirmação.
+5. Registro da Outbox atualizado para publicado.
+6. Consumer recebeu e processou o evento.
+7. Controle de idempotência registrado.
+8. Mensagem confirmada com ACK.
+
+**Resultado:** fluxo Outbox → Publisher → RabbitMQ → Consumer validado em ambiente Docker.
+
+Nesta versão, o processamento do Consumer contempla validação, registro de idempotência e logging do evento, sem execução de uma segunda operação de negócio.
 
 ---
 
@@ -704,4 +736,4 @@ GitHub: [orders-api](https://github.com/AndersonDeOliveiraSoares/orders-api)
 
 ---
 
-*Projeto desenvolvido com foco em boas práticas de Engenharia de Software, arquitetura Backend, integridade de dados, mensageria e qualidade de código.*
+*Projeto desenvolvido com foco em boas práticas de Engenharia de Software, arquitetura Backend, integridade de dados, mensageria, containerização e qualidade de código.*
